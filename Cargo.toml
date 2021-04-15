@@ -1,0 +1,27 @@
+[package]
+name = "nonlocking"
+version = "0.1.0"
+authors = ["Tobias Grasl <toby@meliorbis.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tokio = { version = "1.4", features = ["full"] }
+im = "15.0.0"
+futures = "0.3.13"
+
+[dev-dependencies]
+criterion = {version = "0.3.4", features = ["async_tokio"]}
+
+[[bench]]
+name = "map_benchmark"
+harness = false
+
+[[bench]]
+name = "nonptr_benchmark"
+harness = false
+
+[[bench]]
+name = "locking_benchmark"
+harness = false
