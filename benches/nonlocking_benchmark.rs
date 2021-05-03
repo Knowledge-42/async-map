@@ -4,8 +4,8 @@ use criterion::{criterion_group, criterion_main};
 use tokio::runtime::Builder;
 
 use nonlocking::lockingmap::LockingMap;
-use nonlocking::versionedmap::VersionedMap;
 use nonlocking::AsyncMap;
+use nonlocking::VersionedMap;
 
 use std::sync::Arc;
 
@@ -44,7 +44,9 @@ async fn do_something<M: AsyncMap<Key = String, Value = String> + 'static>(
     }
 
     for handle in handles {
-        handle.await;
+        if let Err(_) = handle.await {
+            todo!()
+        }
     }
 }
 

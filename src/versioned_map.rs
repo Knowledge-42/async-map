@@ -253,10 +253,6 @@ mod test {
 
     use super::VersionedMap;
     use crate::AsyncMap;
-    use im::HashMap;
-    use std::pin::Pin;
-    use std::sync::atomic::{AtomicPtr, Ordering};
-    use std::sync::Arc;
     #[tokio::test]
     async fn get_sync() {
         let map = VersionedMap::<String, String>::new();

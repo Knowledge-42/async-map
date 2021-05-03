@@ -1,10 +1,12 @@
 #![feature(trait_alias)]
 pub mod lockingmap;
-pub mod versionedmap;
+mod versioned_map;
 
 use std::future::Future;
 use std::hash::Hash;
 use std::pin::Pin;
+
+pub use versioned_map::VersionedMap;
 
 pub trait KeyTrait = Clone + Hash + Eq + Sync + Send + Unpin + 'static;
 pub trait ValueTrait = Clone + Sync + Send + Unpin + 'static;
