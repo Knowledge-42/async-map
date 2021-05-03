@@ -3,6 +3,26 @@ pub mod lockingmap;
 pub mod nonlockingmap;
 pub mod nonpointermap;
 
+use std::future::Future;
+use std::hash::Hash;
+use std::pin::Pin;
+
+pub trait KeyTrait = Clone + Hash + Eq + Sync + Send + Unpin + 'static;
+pub trait ValueTrait = Clone + Sync + Send + Unpin + 'static;
+
+pub trait AsyncMap: Clone + Send {
+    type Key: KeyTrait;
+    type Value: ValueTrait;
+
+    fn get_if_present(&self, key: &Self::Key) -> Option<Self::Value>;
+
+    fn get<'a>(
+        &self,
+        key: &'a Self::Key,
+        factory: Box<dyn Fn(&Self::Key) -> Self::Value + Send + 'static>,
+    ) -> Pin<Box<dyn Future<Output = Self::Value> + Send + 'a>>;
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

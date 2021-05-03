@@ -1,9 +1,12 @@
 use std::collections::HashMap;
 use std::future::{ready, Future};
 use std::hash::Hash;
+use std::pin::Pin;
 use std::sync::{Arc, RwLock};
 
 use futures::future::FutureExt;
+
+use crate::{AsyncMap, KeyTrait, ValueTrait};
 
 #[derive(Clone)]
 pub struct LockingMap<K, V>
@@ -12,6 +15,42 @@ where
     V: 'static + Clone + Sync + Send + Unpin,
 {
     map: Arc<RwLock<HashMap<K, V>>>,
+}
+
+impl<K: KeyTrait, V: ValueTrait> AsyncMap for LockingMap<K, V> {
+    type Key = K;
+    type Value = V;
+
+    fn get_if_present(&self, key: &Self::Key) -> Option<Self::Value> {
+        match self.map.read() {
+            Ok(read_guard) => read_guard.get(key).map(Self::Value::clone),
+            Err(_) => {
+                panic!("Can't deal with this yet")
+            }
+        }
+    }
+
+    fn get<'a>(
+        &self,
+        key: &'a Self::Key,
+        factory: Box<dyn Fn(&Self::Key) -> Self::Value + Send + 'static>,
+    ) -> Pin<Box<dyn Future<Output = Self::Value> + Send + 'a>> {
+        let map = self.map.clone();
+        Box::pin(async move {
+            match map.read() {
+                Ok(read_guard) => match read_guard.get(key) {
+                    Some(value_ref) => value_ref.clone(),
+                    None => {
+                        drop(read_guard);
+                        LockingMap::create_if_necessary(&map, key, factory)
+                    }
+                },
+                Err(_) => {
+                    panic!("Can't deal with this yet");
+                }
+            }
+        })
+    }
 }
 
 impl<K, V> LockingMap<K, V>
@@ -41,28 +80,6 @@ where
             },
             Err(x) => {
                 panic!("Can't deal with this yet");
-            }
-        }
-    }
-
-    pub fn get<'a>(
-        &self,
-        key: &'a K,
-        factory: Box<dyn Fn(&K) -> V + Send + 'static>,
-    ) -> impl Future<Output = V> + 'a {
-        let map = self.map.clone();
-        async move {
-            match map.read() {
-                Ok(read_guard) => match read_guard.get(key) {
-                    Some(value_ref) => value_ref.clone(),
-                    None => {
-                        drop(read_guard);
-                        LockingMap::create_if_necessary(&map, key, factory)
-                    }
-                },
-                Err(_) => {
-                    panic!("Can't deal with this yet");
-                }
             }
         }
     }

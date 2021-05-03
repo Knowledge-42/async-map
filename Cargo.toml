@@ -21,7 +21,3 @@ harness = false
 [[bench]]
 name = "nonptr_benchmark"
 harness = false
-
-[[bench]]
-name = "locking_benchmark"
-harness = false
