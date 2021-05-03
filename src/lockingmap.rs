@@ -1,10 +1,8 @@
 use std::collections::HashMap;
-use std::future::{ready, Future};
+use std::future::Future;
 use std::hash::Hash;
 use std::pin::Pin;
 use std::sync::{Arc, RwLock};
-
-use futures::future::FutureExt;
 
 use crate::{AsyncMap, KeyTrait, ValueTrait};
 
@@ -78,8 +76,8 @@ where
                     value
                 }
             },
-            Err(x) => {
-                panic!("Can't deal with this yet");
+            Err(_) => {
+                todo!()
             }
         }
     }

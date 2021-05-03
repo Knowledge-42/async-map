@@ -23,7 +23,6 @@ enum MapAction<K: KeyTrait, V: ValueTrait> {
         Sender<(V, MapHolder<K, V>)>,
         Waker,
     ),
-    Quit,
 }
 
 struct MapReturnFuture<'a, K: KeyTrait, V: ValueTrait> {
@@ -97,7 +96,6 @@ impl<K: KeyTrait, V: ValueTrait> AsyncMap for VersionedMap<K, V> {
                 Err(TryRecvError::Closed) => {
                     println!("get_if_present: closed");
                     std::process::exit(-1);
-                    todo!()
                 }
                 Ok(holder) => {
                     self.map_holder.replace(holder);
@@ -134,12 +132,13 @@ impl<K: KeyTrait, V: ValueTrait> AsyncMap for VersionedMap<K, V> {
                         result_sender: Some(tx),
                     })
                     .then(move |_| match rx.try_recv() {
-                        Err(err) => {
+                        Err(_) => {
                             std::process::exit(-1);
-                            todo!();
                         }
                         Ok((value, map_holder)) => {
-                            tx2.send(map_holder);
+                            if let Err(_) = tx2.send(map_holder) {
+                                todo!()
+                            }
                             ready(value)
                         }
                     }),
@@ -184,7 +183,6 @@ impl<K: KeyTrait, V: ValueTrait> VersionedMap<K, V> {
             let mut current_map = map;
             while let Some(action) = update_receiver.recv().await {
                 match action {
-                    MapAction::Quit => break,
                     MapAction::GetOrCreate(key, factory, result_sender, waker) => {
                         if let Some(new_map) = VersionedMap::create_if_necessary(
                             &latest_version,
@@ -215,13 +213,15 @@ impl<K: KeyTrait, V: ValueTrait> VersionedMap<K, V> {
         match map.get(&key) {
             Some(v) => {
                 // nothing to do; probably multiple creates were queued up for the same key
-                result_sender.send((
+                if let Err(_) = result_sender.send((
                     v.clone(),
                     MapHolder {
                         version: latest_version.load(Ordering::Acquire),
                         map: map.clone(),
                     },
-                ));
+                )) {
+                    todo!()
+                }
                 None
             }
             None => {
@@ -233,13 +233,15 @@ impl<K: KeyTrait, V: ValueTrait> VersionedMap<K, V> {
                 // 1 not added yet!
                 let prior_version = latest_version.fetch_add(1, Ordering::AcqRel);
 
-                result_sender.send((
+                if let Err(_) = result_sender.send((
                     value,
                     MapHolder {
                         version: prior_version + 1,
                         map: updated.clone(),
                     },
-                ));
+                )) {
+                    todo!()
+                }
                 Some(updated)
             }
         }
