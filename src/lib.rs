@@ -1,7 +1,6 @@
 #![feature(trait_alias)]
 pub mod lockingmap;
-pub mod nonlockingmap;
-pub mod nonpointermap;
+pub mod versionedmap;
 
 use std::future::Future;
 use std::hash::Hash;

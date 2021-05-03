@@ -3,15 +3,23 @@ use criterion::Criterion;
 use criterion::{criterion_group, criterion_main};
 use tokio::runtime::Builder;
 
-use nonlocking::nonlockingmap::NonLockingMap;
+use nonlocking::lockingmap::LockingMap;
+use nonlocking::versionedmap::VersionedMap;
+use nonlocking::AsyncMap;
+
 use std::sync::Arc;
+
 // This is a struct that tells Criterion.rs to use the "futures" crate's current-thread executor
 #[cfg(feature = "async_tokio")]
 use criterion::async_executor::AsyncExecutor;
 
 // Here we have an async function to benchmark
-async fn do_something(size: usize, keys: Arc<Vec<Vec<(String, String)>>>) {
-    let map: NonLockingMap<String, String> = NonLockingMap::new();
+async fn do_something<M: AsyncMap<Key = String, Value = String> + 'static>(
+    size: usize,
+    keys: Arc<Vec<Vec<(String, String)>>>,
+    factory: fn() -> M,
+) {
+    let map: M = factory();
 
     let mut handles = Vec::new();
 
@@ -23,12 +31,12 @@ async fn do_something(size: usize, keys: Arc<Vec<Vec<(String, String)>>>) {
             for step in 0..1000 {
                 let step_pair: &(String, String) = &(keys[(step / 100) % 10][(step + thread) % 10]);
 
-                let value = map
-                    .get(
-                        &step_pair.0,
-                        Box::new(move |key: &String| format!("Valu: {}", key)),
-                    )
-                    .await;
+                let future = map.get(
+                    &step_pair.0,
+                    Box::new(move |key: &String| format!("Valu: {}", key)),
+                );
+
+                let value = future.await;
 
                 assert_eq!(*step_pair.1, value);
             }
@@ -56,10 +64,10 @@ fn from_elem(c: &mut Criterion) {
         "ten".to_owned(),
     ];
 
-    let mut keysVec: Vec<Vec<(String, String)>> = Vec::new();
+    let mut keys_vec: Vec<Vec<(String, String)>> = Vec::new();
 
     for i in 0..10 {
-        keysVec.push(
+        keys_vec.push(
             keys.iter()
                 .map(|text| text.clone() + &i.to_string())
                 .map(|key| {
@@ -70,9 +78,9 @@ fn from_elem(c: &mut Criterion) {
         );
     }
 
-    let keys = Arc::new(keysVec);
-
-    c.bench_with_input(BenchmarkId::new("nonlocking", size), &size, move |b, &s| {
+    let keys = Arc::new(keys_vec);
+    let keys_ref = &keys;
+    c.bench_with_input(BenchmarkId::new("nonptr", size), &size, move |b, &s| {
         let runtime = Builder::new_multi_thread()
             .worker_threads(3)
             .thread_name("benchmark")
@@ -81,7 +89,21 @@ fn from_elem(c: &mut Criterion) {
             .unwrap();
         // Insert a call to `to_async` to convert the bencher to async mode.
         // The timing loops are the same as with the normal bencher.
-        b.to_async(runtime).iter(|| do_something(s, keys.clone()));
+        b.to_async(runtime)
+            .iter(|| do_something(s, keys_ref.clone(), VersionedMap::new));
+    });
+
+    c.bench_with_input(BenchmarkId::new("locking", size), &size, move |b, &s| {
+        let runtime = Builder::new_multi_thread()
+            .worker_threads(3)
+            .thread_name("benchmark")
+            .thread_stack_size(3 * 1024 * 1024)
+            .build()
+            .unwrap();
+        // Insert a call to `to_async` to convert the bencher to async mode.
+        // The timing loops are the same as with the normal bencher.
+        b.to_async(runtime)
+            .iter(|| do_something(s, keys_ref.clone(), LockingMap::new));
     });
 }
 

@@ -15,9 +15,5 @@ futures = "0.3.13"
 criterion = {version = "0.3.4", features = ["async_tokio"]}
 
 [[bench]]
-name = "map_benchmark"
-harness = false
-
-[[bench]]
-name = "nonptr_benchmark"
+name = "nonlocking_benchmark"
 harness = false

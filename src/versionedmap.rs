@@ -74,14 +74,14 @@ impl<K: KeyTrait, V: ValueTrait> MapHolder<K, V> {
     }
 }
 
-pub struct NonPointerMap<K: KeyTrait, V: ValueTrait> {
+pub struct VersionedMap<K: KeyTrait, V: ValueTrait> {
     latest_version: Arc<AtomicU64>,
     map_holder: RefCell<MapHolder<K, V>>,
     update_sender: UnboundedSender<MapAction<K, V>>,
     result_receiver: RefCell<Option<Receiver<MapHolder<K, V>>>>,
 }
 
-impl<K: KeyTrait, V: ValueTrait> AsyncMap for NonPointerMap<K, V> {
+impl<K: KeyTrait, V: ValueTrait> AsyncMap for VersionedMap<K, V> {
     type Key = K;
     type Value = V;
 
@@ -149,9 +149,9 @@ impl<K: KeyTrait, V: ValueTrait> AsyncMap for NonPointerMap<K, V> {
     }
 }
 
-impl<K: KeyTrait, V: ValueTrait> Clone for NonPointerMap<K, V> {
+impl<K: KeyTrait, V: ValueTrait> Clone for VersionedMap<K, V> {
     fn clone(&self) -> Self {
-        NonPointerMap {
+        VersionedMap {
             latest_version: self.latest_version.clone(),
             map_holder: self.map_holder.clone(),
             update_sender: self.update_sender.clone(),
@@ -160,7 +160,7 @@ impl<K: KeyTrait, V: ValueTrait> Clone for NonPointerMap<K, V> {
     }
 }
 
-impl<K: KeyTrait, V: ValueTrait> NonPointerMap<K, V> {
+impl<K: KeyTrait, V: ValueTrait> VersionedMap<K, V> {
     pub fn new() -> Self {
         let (update_sender, mut update_receiver) = mpsc::unbounded_channel();
 
@@ -173,7 +173,7 @@ impl<K: KeyTrait, V: ValueTrait> NonPointerMap<K, V> {
             map: map.clone(),
         };
 
-        let non_locking_map: NonPointerMap<K, V> = NonPointerMap {
+        let non_locking_map: VersionedMap<K, V> = VersionedMap {
             latest_version: latest_version.clone(),
             map_holder: RefCell::new(map_holder),
             update_sender,
@@ -186,7 +186,7 @@ impl<K: KeyTrait, V: ValueTrait> NonPointerMap<K, V> {
                 match action {
                     MapAction::Quit => break,
                     MapAction::GetOrCreate(key, factory, result_sender, waker) => {
-                        if let Some(new_map) = NonPointerMap::create_if_necessary(
+                        if let Some(new_map) = VersionedMap::create_if_necessary(
                             &latest_version,
                             &current_map,
                             key,
@@ -249,7 +249,7 @@ impl<K: KeyTrait, V: ValueTrait> NonPointerMap<K, V> {
 #[cfg(test)]
 mod test {
 
-    use super::NonPointerMap;
+    use super::VersionedMap;
     use crate::AsyncMap;
     use im::HashMap;
     use std::pin::Pin;
@@ -257,14 +257,14 @@ mod test {
     use std::sync::Arc;
     #[tokio::test]
     async fn get_sync() {
-        let map = NonPointerMap::<String, String>::new();
+        let map = VersionedMap::<String, String>::new();
 
         assert_eq!(None, map.get_if_present(&"foo".to_owned()));
     }
 
     #[tokio::test]
     async fn get_sync2() {
-        let map = NonPointerMap::<String, String>::new();
+        let map = VersionedMap::<String, String>::new();
 
         let key = "foo".to_owned();
 
