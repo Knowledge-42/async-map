@@ -17,11 +17,11 @@ pub trait AsyncMap: Clone + Send {
 
     fn get_if_present(&self, key: &Self::Key) -> Option<Self::Value>;
 
-    fn get<'a>(
-        &self,
+    fn get<'a, 'b>(
+        &'a self,
         key: &'a Self::Key,
         factory: Box<dyn Fn(&Self::Key) -> Self::Value + Send + 'static>,
-    ) -> Pin<Box<dyn Future<Output = Self::Value> + Send + 'a>>;
+    ) -> Pin<Box<dyn Future<Output = Self::Value> + Send + 'b>>;
 }
 
 #[cfg(test)]
