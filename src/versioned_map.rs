@@ -2,12 +2,13 @@ use std::cell::{Ref, RefCell};
 
 use std::future::{ready, Future};
 
+use std::boxed::Box;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use std::task::{Context, Poll, Waker};
 
-use crate::{AsyncMap, KeyTrait, ValueTrait};
+use crate::{AsyncMap, FactoryBorrow, KeyTrait, ValueTrait};
 
 use futures::FutureExt;
 
@@ -19,20 +20,26 @@ use tokio::sync::oneshot;
 enum MapAction<K: KeyTrait, V: ValueTrait> {
     GetOrCreate(
         K,
-        Box<dyn Fn(&K) -> V + Send>,
+        Box<dyn FactoryBorrow<K, V>>,
         oneshot::Sender<(V, MapHolder<K, V>)>,
         Waker,
     ),
 }
 
-struct MapReturnFuture<K: KeyTrait, V: ValueTrait> {
+struct MapReturnFuture<K: KeyTrait, V: ValueTrait, B>
+where
+    B: FactoryBorrow<K, V> + Unpin,
+{
     update_sender: UnboundedSender<MapAction<K, V>>,
     key: K,
-    factory: Option<Box<dyn Fn(&K) -> V + Send>>,
+    factory: Option<B>,
     result_sender: Option<oneshot::Sender<(V, MapHolder<K, V>)>>,
 }
 
-impl<K: KeyTrait, V: ValueTrait> Future for MapReturnFuture<K, V> {
+impl<'a, K: KeyTrait, V: ValueTrait, B> Future for MapReturnFuture<K, V, B>
+where
+    B: FactoryBorrow<K, V> + Unpin,
+{
     type Output = ();
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut mutable = self;
@@ -48,7 +55,7 @@ impl<K: KeyTrait, V: ValueTrait> Future for MapReturnFuture<K, V> {
                 Some(factory) => {
                     match mutable.update_sender.send(MapAction::GetOrCreate(
                         mutable.key.clone(),
-                        factory,
+                        Box::new(factory),
                         result_sender,
                         cx.waker().clone(),
                     )) {
@@ -135,10 +142,10 @@ impl<K: KeyTrait, V: ValueTrait> AsyncMap for VersionedMap<K, V> {
         self.latest_map().map.get(key).map(V::clone)
     }
 
-    fn get<'a, 'b>(
+    fn get<'a, 'b, B: FactoryBorrow<K, V>>(
         &'a self,
         key: &'a Self::Key,
-        factory: Box<dyn Fn(&Self::Key) -> Self::Value + Send + 'static>,
+        factory: B,
     ) -> Pin<Box<dyn Future<Output = Self::Value> + Send + 'b>> {
         match self.get_if_present(key) {
             Some(x) => Box::pin(ready(x)),
@@ -224,10 +231,10 @@ impl<K: KeyTrait, V: ValueTrait> VersionedMap<K, V> {
         non_locking_map
     }
 
-    fn send_update<'a, 'b>(
+    fn send_update<'a, 'b, B: FactoryBorrow<K, V>>(
         &self,
         key: K,
-        factory: Box<dyn Fn(&K) -> V + Send + 'static>,
+        factory: B,
     ) -> Pin<Box<dyn Future<Output = V> + Send + 'b>> {
         let (tx, mut rx) = oneshot::channel();
         let map_updater = self.get_updater();
@@ -245,12 +252,12 @@ impl<K: KeyTrait, V: ValueTrait> VersionedMap<K, V> {
             .boxed()
     }
 
-    fn create_return_future(
+    fn create_return_future<B: FactoryBorrow<K, V>>(
         &self,
         key: K,
-        factory: Box<dyn Fn(&K) -> V + Send + 'static>,
+        factory: B,
         sender: oneshot::Sender<(V, MapHolder<K, V>)>,
-    ) -> MapReturnFuture<K, V> {
+    ) -> MapReturnFuture<K, V, B> {
         MapReturnFuture {
             key: key,
             factory: Some(factory),
@@ -306,7 +313,7 @@ impl<K: KeyTrait, V: ValueTrait> VersionedMap<K, V> {
         latest_version: &Arc<AtomicU64>,
         map: &HashMap<K, V>,
         key: K,
-        factory: Box<dyn Fn(&K) -> V + Send>,
+        factory: Box<dyn FactoryBorrow<K, V>>,
         result_sender: oneshot::Sender<(V, MapHolder<K, V>)>,
     ) -> Option<(HashMap<K, V>, u64)> {
         match map.get(&key) {
@@ -324,7 +331,7 @@ impl<K: KeyTrait, V: ValueTrait> VersionedMap<K, V> {
                 None
             }
             None => {
-                let value = factory(&key);
+                let value = (*factory).borrow()(&key);
 
                 // println!("Length: {}", map.len());
                 let updated = map.update(key, value.clone());
@@ -351,12 +358,16 @@ impl<K: KeyTrait, V: ValueTrait> VersionedMap<K, V> {
 mod test {
 
     use super::VersionedMap;
-    use crate::AsyncMap;
+    use crate::{AsyncMap, Factory};
     #[tokio::test]
     async fn get_sync() {
         let map = VersionedMap::<String, String>::new();
 
         assert_eq!(None, map.get_if_present(&"foo".to_owned()));
+    }
+
+    fn hello_factory(key: &String) -> String {
+        format!("Hello, {}!", key)
     }
 
     #[tokio::test]
@@ -365,7 +376,10 @@ mod test {
 
         let key = "foo".to_owned();
 
-        let future = map.get(&key, Box::new(|key| format!("Hello, {}!", key)));
+        let future = map.get(
+            &key,
+            Box::new(hello_factory) as Box<dyn Factory<String, String>>,
+        );
 
         assert_eq!(None, map.get_if_present(&key));
         let value = future.await;

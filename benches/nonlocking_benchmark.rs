@@ -4,8 +4,8 @@ use criterion::{criterion_group, criterion_main};
 use tokio::runtime::Builder;
 
 use nonlocking::lockingmap::LockingMap;
-use nonlocking::AsyncMap;
 use nonlocking::VersionedMap;
+use nonlocking::{AsyncMap, Factory};
 
 use std::sync::Arc;
 
@@ -33,7 +33,8 @@ async fn do_something<M: AsyncMap<Key = String, Value = String> + 'static>(
 
                 let future = map.get(
                     &step_pair.0,
-                    Box::new(move |key: &String| format!("Valu: {}", key)),
+                    Box::new(move |key: &String| format!("Valu: {}", key))
+                        as Box<dyn Factory<String, String>>,
                 );
 
                 let value = future.await;

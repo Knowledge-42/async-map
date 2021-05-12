@@ -4,18 +4,18 @@ use std::hash::Hash;
 use std::pin::Pin;
 use std::sync::{Arc, RwLock};
 
-use crate::{AsyncMap, KeyTrait, ValueTrait};
+use crate::{AsyncMap, FactoryBorrow, KeyTrait, ValueTrait};
 
 #[derive(Clone)]
 pub struct LockingMap<K, V>
 where
-    K: 'static + Clone + Hash + Eq + Sync + Send + Unpin,
-    V: 'static + Clone + Sync + Send + Unpin,
+    K: 'static + Clone + Hash + Eq + Send + Unpin,
+    V: 'static + Clone + Send + Unpin,
 {
     map: Arc<RwLock<HashMap<K, V>>>,
 }
 
-impl<K: KeyTrait, V: ValueTrait> AsyncMap for LockingMap<K, V> {
+impl<K: KeyTrait + Sync, V: ValueTrait + Sync> AsyncMap for LockingMap<K, V> {
     type Key = K;
     type Value = V;
 
@@ -28,10 +28,10 @@ impl<K: KeyTrait, V: ValueTrait> AsyncMap for LockingMap<K, V> {
         }
     }
 
-    fn get<'a, 'b>(
+    fn get<'a, 'b, B: FactoryBorrow<K, V>>(
         &self,
         key: &'a Self::Key,
-        factory: Box<dyn Fn(&Self::Key) -> Self::Value + Send + 'static>,
+        factory: B,
     ) -> Pin<Box<dyn Future<Output = Self::Value> + Send + 'b>> {
         let map = self.map.clone();
         let key = key.clone();
@@ -63,16 +63,16 @@ where
         }
     }
 
-    fn create_if_necessary<'a>(
+    fn create_if_necessary<'a, B: FactoryBorrow<K, V>>(
         map: &'a Arc<RwLock<HashMap<K, V>>>,
         key: K,
-        factory: Box<dyn Fn(&K) -> V + Send + 'static>,
+        factory: B,
     ) -> V {
         match map.write() {
             Ok(mut map) => match map.get(&key) {
                 Some(value_ref) => value_ref.clone(),
                 None => {
-                    let value = factory(&key);
+                    let value = factory.borrow()(&key);
                     map.insert(key, value.clone());
                     value
                 }
