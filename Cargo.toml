@@ -3,6 +3,9 @@ name = "async-map"
 version = "0.1.1"
 authors = ["Tobias Grasl <toby@meliorbis.com>"]
 edition = "2018"
+description = "A rarely-locking, shared map for Rust."
+homepage = "https://github.com/herblet/async-map"
+license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
