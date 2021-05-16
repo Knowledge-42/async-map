@@ -3,9 +3,9 @@ use criterion::Criterion;
 use criterion::{criterion_group, criterion_main};
 use tokio::runtime::Builder;
 
-use nonlocking::lockingmap::LockingMap;
-use nonlocking::VersionedMap;
-use nonlocking::{AsyncMap, Factory};
+use async_map::lockingmap::LockingMap;
+use async_map::VersionedMap;
+use async_map::{AsyncMap, Factory};
 
 use std::sync::Arc;
 
@@ -83,7 +83,7 @@ fn from_elem(c: &mut Criterion) {
 
     let keys = Arc::new(keys_vec);
     let keys_ref = &keys;
-    c.bench_with_input(BenchmarkId::new("nonptr", size), &size, move |b, &s| {
+    c.bench_with_input(BenchmarkId::new("versioned", size), &size, move |b, &s| {
         let runtime = Builder::new_multi_thread()
             .worker_threads(3)
             .thread_name("benchmark")
