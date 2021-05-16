@@ -1,21 +1,17 @@
 kind: pipeline
 name: default
 
+platform:
+  os: linux
+  arch: amd64
+
 steps:
   - name: build and test
-    image: xd009642/tarpaulin
-    commands:
-      - cargo build --verbose --all
-      - cargo test --verbose --all
-  - name: coverage
-    image: xd009642/tarpaulin
+    image: rust:1.52.1
     environment:
+      CARGO_MAKE_RUN_CODECOV: "true"
       CODECOV_TOKEN:
         from_secret: CODECOV_TOKEN
     commands:
-      - cargo tarpaulin --out Xml
-      - bash <(curl -s https://codecov.io/bash) -t CODECOV_TOKEN
-    when:
-      status:
-        - failure
-        - success
+      - cargo install --debug cargo-make
+      - cargo make ci-flow
