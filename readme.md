@@ -1,4 +1,5 @@
-[![Build Status](https://cloud.drone.io/api/badges/herblet/async-map/status.svg)](https://cloud.drone.io/herblet/async-map)
+![ci](https://github.com/github/docs/actions/workflows/build_with_coverage.yml/badge.svg)
+[![codecov](https://codecov.io/gh/herblet/async-map/branch/main/graph/badge.svg?token=I579HJZVHQ)](https://codecov.io/gh/herblet/async-map)
 
 This Rust project provides datastructures for shared use in an async environment, with the aim of avoiding locking as far as possible.
 

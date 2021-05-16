@@ -1,9 +1,17 @@
 kind: pipeline
 name: default
 
+platform:
+  os: linux
+  arch: amd64
+
 steps:
-  - name: test
+  - name: build and test
     image: rust:1.52.1
+    environment:
+      CARGO_MAKE_RUN_CODECOV: "true"
+      CODECOV_TOKEN:
+        from_secret: CODECOV_TOKEN
     commands:
-      - cargo build --verbose --all
-      - cargo test --verbose --all
+      - cargo install --debug cargo-make
+      - cargo make ci-flow
