@@ -2,8 +2,21 @@ kind: pipeline
 name: default
 
 steps:
-  - name: test
+  - name: build and test
     image: rust:1.52.1
     commands:
       - cargo build --verbose --all
       - cargo test --verbose --all
+  - name: coverage
+    image: rust:1.52.1
+    environment:
+      CODECOV_TOKEN:
+        from_secret: CODECOV_TOKEN
+    commands:
+      - cargo install cargo-tarpaulin
+      - cargo tarpaulin --out Xml
+      - bash <(curl -s https://codecov.io/bash) -t CODECOV_TOKEN
+    when:
+      status:
+        - failure
+        - success
