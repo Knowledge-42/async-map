@@ -3,17 +3,16 @@ name: default
 
 steps:
   - name: build and test
-    image: rust:1.52.1
+    image: xd009642/tarpaulin
     commands:
       - cargo build --verbose --all
       - cargo test --verbose --all
   - name: coverage
-    image: rust:1.52.1
+    image: xd009642/tarpaulin
     environment:
       CODECOV_TOKEN:
         from_secret: CODECOV_TOKEN
     commands:
-      - cargo install cargo-tarpaulin
       - cargo tarpaulin --out Xml
       - bash <(curl -s https://codecov.io/bash) -t CODECOV_TOKEN
     when:
