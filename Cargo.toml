@@ -1,6 +1,6 @@
 [package]
-name = "nonlocking"
-version = "0.1.0"
+name = "async-map"
+version = "0.1.1"
 authors = ["Tobias Grasl <toby@meliorbis.com>"]
 edition = "2018"
 
@@ -15,5 +15,5 @@ futures = "0.3.15"
 criterion = {version = "0.3.4", features = ["async_tokio"]}
 
 [[bench]]
-name = "nonlocking_benchmark"
+name = "async_map_benchmark"
 harness = false
