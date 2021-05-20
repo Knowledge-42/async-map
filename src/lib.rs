@@ -1,5 +1,6 @@
 #![macro_use]
 pub mod lockingmap;
+mod single_writer_versioned;
 mod versioned_map;
 
 use std::borrow::Borrow;
