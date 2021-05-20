@@ -1,5 +1,6 @@
 #![macro_use]
 pub mod lockingmap;
+pub mod non_locking_map;
 mod single_writer_versioned;
 mod versioned_map;
 
@@ -10,11 +11,11 @@ use std::pin::Pin;
 
 pub use versioned_map::VersionedMap;
 
-pub trait KeyTrait: Clone + Hash + Eq + Sync + Send + Unpin + 'static {}
-impl<T: Clone + Hash + Eq + Sync + Send + Unpin + 'static> KeyTrait for T {}
+pub trait KeyTrait: Clone + Hash + Eq + Sync + Send + Unpin + std::fmt::Debug + 'static {}
+impl<T: Clone + Hash + Eq + Sync + Send + Unpin + std::fmt::Debug + 'static> KeyTrait for T {}
 
-pub trait ValueTrait: Clone + Send + Sync + Unpin + 'static {}
-impl<T: Clone + Send + Sync + Unpin + 'static> ValueTrait for T {}
+pub trait ValueTrait: Clone + Send + Sync + std::fmt::Debug + Unpin + 'static {}
+impl<T: Clone + Send + Sync + Unpin + std::fmt::Debug + 'static> ValueTrait for T {}
 
 pub trait Factory<K: KeyTrait, V: ValueTrait>: Fn(&K) -> V + Send + Sync {}
 impl<K: KeyTrait, V: ValueTrait, T: Fn(&K) -> V + Send + Sync> Factory<K, V> for T {}

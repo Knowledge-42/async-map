@@ -221,18 +221,17 @@ mod private {
 }
 
 use self::private::{Data, Updater, Version};
-use std::any::Any;
 use std::cell::RefCell;
 use std::sync::Arc;
 use tokio::sync::mpsc::{self, unbounded_channel, UnboundedReceiver, UnboundedSender};
 
-trait DataUpdater<T>: (Fn(&T) -> Option<T>) + Send + Any + 'static
+pub trait DataUpdater<T>: (FnOnce(&T) -> Option<T>) + Send + 'static
 where
     T: Data,
 {
 }
 
-impl<T, S: (Fn(&T) -> Option<T>) + Send + Any + 'static> DataUpdater<T> for S where T: Data {}
+impl<T, S: (FnOnce(&T) -> Option<T>) + Send + 'static> DataUpdater<T> for S where T: Data {}
 
 enum VersionedUpdaterAction<T>
 where
@@ -243,7 +242,7 @@ where
 }
 
 #[derive(Clone, Debug)]
-struct Versioned<T>
+pub struct Versioned<T>
 where
     T: Data,
 {
@@ -251,7 +250,7 @@ where
     update_sender: UnboundedSender<VersionedUpdaterAction<T>>,
 }
 
-struct Quitter<T>
+pub struct Quitter<T>
 where
     T: Data,
 {
@@ -299,7 +298,10 @@ where
         }
     }
 
-    fn update(&self, update_fn: Box<dyn DataUpdater<T>>) -> Result<(), Box<dyn DataUpdater<T>>> {
+    pub fn update(
+        &self,
+        update_fn: Box<dyn DataUpdater<T>>,
+    ) -> Result<(), Box<dyn DataUpdater<T>>> {
         self.update_sender
             .send(VersionedUpdaterAction::Update(update_fn))
             .map_err(|action| match action {

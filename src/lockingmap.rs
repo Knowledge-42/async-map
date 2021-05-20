@@ -54,8 +54,8 @@ impl<K: KeyTrait + Sync, V: ValueTrait + Sync> AsyncMap for LockingMap<K, V> {
 
 impl<K, V> LockingMap<K, V>
 where
-    K: 'static + Clone + Hash + Eq + Sync + Send + Unpin,
-    V: 'static + Clone + Sync + Send + Unpin,
+    K: KeyTrait,
+    V: ValueTrait,
 {
     pub fn new() -> Self {
         LockingMap {
