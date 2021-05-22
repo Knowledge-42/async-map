@@ -17,9 +17,6 @@ impl<T: Clone + Hash + Eq + Sync + Send + Unpin + std::fmt::Debug + 'static> Key
 pub trait ValueTrait: Clone + Send + Sync + std::fmt::Debug + Unpin + 'static {}
 impl<T: Clone + Send + Sync + Unpin + std::fmt::Debug + 'static> ValueTrait for T {}
 
-// pub trait Factory<K: KeyTrait, V: ValueTrait>: Fn(&K) -> V + Send + Sync {}
-// impl<K: KeyTrait, V: ValueTrait, T: Fn(&K) -> V + Send + Sync> Factory<K, V> for T {}
-
 pub trait FactoryBorrow<K: KeyTrait, V: ValueTrait>:
     Borrow<dyn Fn(&K) -> V + Send + Sync> + Send + 'static + Unpin
 {
