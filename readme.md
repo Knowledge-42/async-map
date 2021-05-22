@@ -1,3 +1,4 @@
+[![Crates.io](https://img.shields.io/crates/v/async-map.svg?logo=rust)](https://crates.io/crates/async-map)
 ![async-map](https://github.com/herblet/async-map/actions/workflows/build_with_coverage.yml/badge.svg)
 [![codecov](https://codecov.io/gh/herblet/async-map/branch/main/graph/badge.svg?token=I579HJZVHQ)](https://codecov.io/gh/herblet/async-map)
 
