@@ -1,4 +1,4 @@
-use crate::single_writer_versioned::{DataUpdater, Quitter, Versioned};
+use crate::single_writer_versioned::{DataUpdater, Versioned};
 use crate::{AsyncMap, FactoryBorrow, KeyTrait, ValueTrait};
 use im;
 

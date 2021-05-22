@@ -35,29 +35,35 @@ mod private {
             &self.data
         }
 
-        pub fn next(&self) -> Option<Arc<Version<T>>> {
-            if self.version == self.latest_version.load(Ordering::Acquire) {
-                None
-            } else {
-                unsafe { (&*self.next.get()).clone() }
-            }
-        }
-
         pub fn latest<'a>(self: &'a Arc<Version<T>>) -> Option<&'a Arc<Version<T>>> {
             let latest_version = self.latest_version.load(Ordering::Acquire);
 
             if self.version == latest_version {
                 None
             } else {
-                Some(self.get_version(latest_version))
+                // This is safe because above we ensured that
+                // a) The requested version exists and is the latest one
+                // b) It is not self, so self must be in the chain after self.
+                unsafe { Some(self.get_version(latest_version)) }
             }
         }
 
-        fn get_version<'a>(self: &'a Arc<Version<T>>, version: u32) -> &'a Arc<Version<T>> {
+        /// This method is unsafed because it does not check whether there is a next; it
+        /// should only be called in cases where that check has been performed
+        unsafe fn next<'a>(self: &'a Arc<Version<T>>) -> Option<&'a Arc<Version<T>>> {
+            (&*self.next.get()).as_ref()
+        }
+
+        /// This method is unsafed because it does not check whether the requested version exists,
+        /// and is in the chain following self; it should only be called in cases where that check
+        /// has been performed
+        unsafe fn get_version<'a>(self: &'a Arc<Version<T>>, version: u32) -> &'a Arc<Version<T>> {
             if self.version == version {
                 self
             } else {
-                unsafe { (&*self.next.get()).as_ref().unwrap().get_version(version) }
+                self.next()
+                    .map(|next_version| next_version.get_version(version))
+                    .expect("Non-existent version requested")
             }
         }
 
@@ -142,7 +148,7 @@ mod private {
             let version = Version::initial("hello").0;
             assert_eq!("hello", version.data);
             assert_eq!(0, version.version);
-            assert_eq!(true, version.next().is_none());
+            assert_eq!(true, unsafe { version.next() }.is_none());
         }
 
         #[test]
@@ -152,18 +158,21 @@ mod private {
 
             assert_eq!("hello", first.data);
             assert_eq!(0, first.version);
-            assert_eq!(false, first.next().is_none());
-            assert_eq!(second.version, first.next().as_ref().unwrap().version);
+            assert_eq!(false, unsafe { first.next() }.is_none());
+            assert_eq!(
+                second.version,
+                unsafe { first.next() }.as_ref().unwrap().version
+            );
 
             assert_eq!("goodbye", second.data);
             assert_eq!(1, second.version);
-            assert_eq!(true, second.next().is_none());
+            assert_eq!(true, unsafe { second.next() }.is_none());
         }
 
         #[test]
         fn it_does_not_update_next_version() {
-            let (first, updater) = Version::initial("hello");
-            let (second, updater) = first.set_next("goodbye").unwrap();
+            let (first, _) = Version::initial("hello");
+            let (_, _) = first.set_next("goodbye").unwrap();
             let result = first.set_next("au revoir");
 
             assert_eq!(true, result.is_err());
@@ -176,7 +185,7 @@ mod private {
             version.set_next("goodbye").unwrap();
 
             tokio::task::spawn(async move {
-                assert_eq!("goodbye", version.next().unwrap().data);
+                assert_eq!("goodbye", unsafe { version.next() }.unwrap().data);
             })
             .await
             .unwrap();
@@ -241,6 +250,7 @@ where
     Quit,
 }
 
+/// A Versioned
 #[derive(Clone, Debug)]
 pub struct Versioned<T>
 where
@@ -250,6 +260,18 @@ where
     update_sender: UnboundedSender<VersionedUpdaterAction<T>>,
 }
 
+/// Quits the updated task backing the data structure. Though not necessary (see notes) it allows
+/// the the data structure to become invalidated for updates, which may speed up dropping of
+/// references to it by acting as a signal to reference holders.
+///
+/// Some notes:
+///
+/// 1. Any previouyls dispatched updates will be
+/// processed before the map task is quit
+/// 1. As long as references to the Versioned itself, the data will not
+/// be dropped. In other words, this does not free any memory.
+/// 1. Conversely, when all references are dropped the memory and the task
+/// will also be dropped. Thus, quitting is not necessary.
 pub struct Quitter<T>
 where
     T: Data,
@@ -262,7 +284,9 @@ where
     T: Data,
 {
     pub fn quit(self) {
-        self.update_sender.send(VersionedUpdaterAction::Quit);
+        if let Err(_) = self.update_sender.send(VersionedUpdaterAction::Quit) {
+            // Probably already quit
+        }
     }
 }
 
@@ -362,6 +386,7 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::sync::atomic::{AtomicU32, Ordering};
 
     #[tokio::test]
     async fn intial_holds_passed_data() {
@@ -415,5 +440,79 @@ mod test {
         tokio::task::yield_now().await;
         // The second update did not take.
         versioned.with_latest(|data| assert_eq!("Hello, World", data));
+    }
+
+    #[derive(Debug)]
+    struct TestData {
+        drop_counter: Arc<AtomicU32>,
+    }
+
+    impl Drop for TestData {
+        fn drop(&mut self) {
+            self.drop_counter.fetch_add(1, Ordering::Release);
+        }
+    }
+
+    #[tokio::test]
+    async fn old_versions_are_purged() {
+        let counter = Arc::<AtomicU32>::default();
+        let drop_counter = counter.clone();
+
+        let versioned: Versioned<Arc<TestData>> = Versioned::from_initial(Arc::new(TestData {
+            drop_counter: drop_counter,
+        }))
+        .0;
+        let clone = versioned.clone();
+
+        assert_eq!(0, counter.load(Ordering::Acquire));
+
+        let drop_counter = counter.clone();
+
+        //updates affect versioned
+        versioned.update(Box::new(|old| {
+            Some(Arc::new(TestData {
+                drop_counter: drop_counter,
+            }))
+        }));
+
+        tokio::task::yield_now().await;
+        // update Versioned to latest
+        versioned.with_latest(Box::new(|_: &Arc<TestData>| ()));
+        tokio::task::yield_now().await;
+
+        // Nothing dropped because clone still has initial version
+        assert_eq!(0, counter.load(Ordering::Acquire));
+
+        // update cloned to latest
+        clone.with_latest(Box::new(|_: &Arc<TestData>| ()));
+        tokio::task::yield_now().await;
+        // First verion dropped, everyone has latest
+        assert_eq!(1, counter.load(Ordering::Acquire));
+
+        drop(versioned);
+        drop(clone);
+
+        tokio::task::yield_now().await;
+
+        // all Versioned instances have been dropped, so the update task should have ended
+        // and the latest version dropped too
+        assert_eq!(2, counter.load(Ordering::Acquire));
+    }
+
+    fn any_test<T: std::any::Any + Send + 'static>(func: Box<dyn FnOnce() -> Box<T>>) -> Box<T> {
+        func()
+    }
+
+    #[tokio::test]
+    async fn test_any() {
+        let foo = any_test(Box::new(|| Box::new(String::from("Hello"))));
+
+        assert_eq!("Hello", *foo);
+
+        let bar = any_test(Box::new(|| {
+            Box::new(im::HashMap::new().update("key", "secret"))
+        }));
+
+        assert_eq!("secret", *bar.get("key").unwrap());
     }
 }
