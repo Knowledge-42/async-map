@@ -358,7 +358,7 @@ impl<K: KeyTrait, V: ValueTrait> VersionedMap<K, V> {
 mod test {
 
     use super::VersionedMap;
-    use crate::{AsyncMap, Factory};
+    use crate::AsyncMap;
     #[tokio::test]
     async fn get_sync() {
         let map = VersionedMap::<String, String>::new();
@@ -378,7 +378,7 @@ mod test {
 
         let future = map.get(
             &key,
-            Box::new(hello_factory) as Box<dyn Factory<String, String>>,
+            Box::new(hello_factory) as Box<dyn Fn(&String) -> String + Send + Sync>,
         );
 
         assert_eq!(None, map.get_if_present(&key));

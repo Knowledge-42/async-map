@@ -5,8 +5,8 @@ use tokio::runtime::Builder;
 
 use async_map::lockingmap::LockingMap;
 use async_map::non_locking_map::NonLockingMap;
+use async_map::AsyncMap;
 use async_map::VersionedMap;
-use async_map::{AsyncMap, Factory};
 use std::sync::Arc;
 
 // This is a struct that tells Criterion.rs to use the "futures" crate's current-thread executor
@@ -34,7 +34,7 @@ async fn do_something<M: AsyncMap<Key = String, Value = String> + 'static>(
                 let future = map.get(
                     &step_pair.0,
                     Box::new(move |key: &String| format!("Valu: {}", key))
-                        as Box<dyn Factory<String, String>>,
+                        as Box<dyn Fn(&String) -> String + Send + Sync>,
                 );
 
                 let value = future.await;
