@@ -1,3 +1,6 @@
+//! This crate provides data-structure for concurrent use by many tasks in an asynschronous contexts,
+//! with a particular focus on high-read/low-write situations.
+#![crate_name = "async_map"]
 #![macro_use]
 pub mod lockingmap;
 pub mod non_locking_map;

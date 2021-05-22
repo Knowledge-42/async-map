@@ -1,3 +1,10 @@
+//! The single-writer-versioned module implements a versioning mechanism for immutable data-structures
+//! which allows many concurrent readers. All changes to the contained data structure - which, since they
+//! are immtuable, means a creating a new instance - are delegated to a single task, and hence occur
+//! sequentially. Each new update is appended to a linked list of versions, and an atomic integer is used to
+//! indicate which is the latest version, so readers can retrieve the latest version when they read. This integer
+//! acts in place of a locked on the linked list element, so that no actual locks are required and reads can always
+//! proceed without waiting.
 mod private {
     use std::cell::UnsafeCell;
     use std::ops::Deref;
@@ -250,7 +257,15 @@ where
     Quit,
 }
 
-/// A Versioned
+/// The core structure of this package, which provides synchronous read-access to the latest version and
+/// aysnchronous writes, delegated to the update task.
+///
+/// The struct is not Sync, but it is Send; in order to share between tasks it should be cloned and Sent.
+/// The contained data is not cloned; clones share the same backing linked list of versions and data.
+///
+/// Old versions are not actively purged, but will be dropped as long as there are no more instances holding
+/// that version. This means that instances that are held for a long duration without being accessed will prevent
+/// the old version from being purged. This situation should be avoided.
 #[derive(Clone, Debug)]
 pub struct Versioned<T>
 where
@@ -266,7 +281,7 @@ where
 ///
 /// Some notes:
 ///
-/// 1. Any previouyls dispatched updates will be
+/// 1. Any previously dispatched updates will be
 /// processed before the map task is quit
 /// 1. As long as references to the Versioned itself, the data will not
 /// be dropped. In other words, this does not free any memory.
@@ -294,6 +309,8 @@ impl<T> Versioned<T>
 where
     T: Data,
 {
+    /// Creates the Versioned from the initial data, returning both the Versioned instance
+    /// and a Quitter which can be used to stop the backing update task.
     pub fn from_initial(data: T) -> (Self, Quitter<T>) {
         let (initial_version, update_sender) = VersionedUpdater::start_from_initial(data);
 
@@ -306,7 +323,11 @@ where
         )
     }
 
-    pub fn with_latest<U, F: Fn(&T) -> U>(&self, action: F) -> U {
+    /// Passes a reference to the latest version of the contained data to the provided
+    /// function and returns it result.
+    ///
+    /// This is the mechanism for read access to the data.
+    pub fn with_latest<U, F: FnOnce(&T) -> U>(&self, action: F) -> U {
         self.ensure_latest();
         let the_ref = self.current_holder.borrow();
         action(&***the_ref)
@@ -322,6 +343,9 @@ where
         }
     }
 
+    /// Allows the data to be upated by passing the latest version to the provided DataUpdater,
+    /// and storing the result if one is provided. The update is delegated to the update task,
+    /// which is also where the DataUpdater will be called.
     pub fn update(
         &self,
         update_fn: Box<dyn DataUpdater<T>>,
@@ -335,6 +359,7 @@ where
     }
 }
 
+/// This is the backing task which receives the updates and performs them sequentially.
 struct VersionedUpdater<T>
 where
     T: Data,
