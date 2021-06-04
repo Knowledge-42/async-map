@@ -2,9 +2,10 @@
 //! with a particular focus on high-read/low-write situations.
 #![crate_name = "async_map"]
 #![macro_use]
+#[doc(hidden)] // Really just to provide a comparison for bechmarking
 pub mod lockingmap;
 pub mod non_locking_map;
-mod single_writer_versioned;
+pub mod single_writer_versioned;
 mod versioned_map;
 
 use std::borrow::Borrow;

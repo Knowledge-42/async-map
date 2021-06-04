@@ -1,4 +1,4 @@
-//! The single-writer-versioned module implements a versioning mechanism for immutable data-structures
+//! The `single_writer_versioned` module implements a versioning mechanism for immutable data-structures
 //! which allows many concurrent readers. All changes to the contained data structure - which, since they
 //! are immtuable, means a creating a new instance - are delegated to a single task, and hence occur
 //! sequentially. Each new update is appended to a linked list of versions, and an atomic integer is used to
@@ -6,7 +6,7 @@
 //! acts in place of a locked on the linked list element, so that no actual locks are required and reads can always
 //! proceed without waiting.
 mod private {
-    use std::cell::UnsafeCell;
+    use std::cell::Cell;
     use std::ops::Deref;
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Arc;
@@ -14,15 +14,20 @@ mod private {
     pub trait Data: Send + Sync + std::fmt::Debug + 'static {}
     impl<T: Send + Sync + std::fmt::Debug + 'static> Data for T {}
 
-    #[derive(Debug)]
     pub struct Version<T>
     where
         T: Data,
     {
         version: u32,
         data: T,
-        next: UnsafeCell<Option<Arc<Version<T>>>>,
+        next: Cell<Option<Arc<Version<T>>>>,
         latest_version: Arc<AtomicU32>,
+    }
+
+    impl<T: Data> std::fmt::Debug for Version<T> {
+        fn fmt<'a>(&self, f: &mut std::fmt::Formatter<'a>) -> std::fmt::Result {
+            f.write_fmt(format_args!("Version[{}]", self.version))
+        }
     }
 
     impl<T> Version<T>
@@ -51,26 +56,24 @@ mod private {
                 // This is safe because above we ensured that
                 // a) The requested version exists and is the latest one
                 // b) It is not self, so self must be in the chain after self.
-                unsafe { Some(self.get_version(latest_version)) }
+                Some(self.get_version(latest_version))
             }
         }
 
-        /// This method is unsafed because it does not check whether there is a next; it
+        /// This method is unsafe because it does not check whether there is a next; it
         /// should only be called in cases where that check has been performed
-        unsafe fn next<'a>(self: &'a Arc<Version<T>>) -> Option<&'a Arc<Version<T>>> {
-            (&*self.next.get()).as_ref()
+        fn next<'a>(self: &'a Arc<Version<T>>) -> &'a Arc<Version<T>> {
+            unsafe { &*self.next.as_ptr() }.as_ref().unwrap()
         }
 
         /// This method is unsafed because it does not check whether the requested version exists,
         /// and is in the chain following self; it should only be called in cases where that check
         /// has been performed
-        unsafe fn get_version<'a>(self: &'a Arc<Version<T>>, version: u32) -> &'a Arc<Version<T>> {
+        fn get_version<'a>(self: &'a Arc<Version<T>>, version: u32) -> &'a Arc<Version<T>> {
             if self.version == version {
                 self
             } else {
-                self.next()
-                    .map(|next_version| next_version.get_version(version))
-                    .expect("Non-existent version requested")
+                self.next().get_version(version)
             }
         }
 
@@ -92,9 +95,7 @@ mod private {
             ));
 
             // First, set the next version on self
-            unsafe {
-                (&mut *self.next.get()).replace(next.clone());
-            }
+            self.next.replace(Some(next.clone()));
 
             // Now that next has been set we can update the latest version to reflect
             // the new reality
@@ -109,7 +110,7 @@ mod private {
             let result = Version {
                 version,
                 data,
-                next: UnsafeCell::new(None),
+                next: Cell::new(None),
                 latest_version,
             };
             result
@@ -149,31 +150,24 @@ mod private {
     mod test {
         #![allow(mutable_transmutes)]
         use super::Version;
-        use std::sync::Arc;
         #[test]
         fn it_creates_sensible_initial() {
             let version = Version::initial("hello").0;
             assert_eq!("hello", version.data);
             assert_eq!(0, version.version);
-            assert_eq!(true, unsafe { version.next() }.is_none());
         }
 
         #[test]
         fn it_accepts_a_next_version() {
-            let (first, updater) = Version::initial("hello");
-            let (second, updater) = first.set_next("goodbye").unwrap();
+            let (first, _) = Version::initial("hello");
+            let (second, _) = first.set_next("goodbye").unwrap();
 
             assert_eq!("hello", first.data);
             assert_eq!(0, first.version);
-            assert_eq!(false, unsafe { first.next() }.is_none());
-            assert_eq!(
-                second.version,
-                unsafe { first.next() }.as_ref().unwrap().version
-            );
+            assert_eq!(second.version, first.next().as_ref().version);
 
             assert_eq!("goodbye", second.data);
             assert_eq!(1, second.version);
-            assert_eq!(true, unsafe { second.next() }.is_none());
         }
 
         #[test]
@@ -192,7 +186,7 @@ mod private {
             version.set_next("goodbye").unwrap();
 
             tokio::task::spawn(async move {
-                assert_eq!("goodbye", unsafe { version.next() }.unwrap().data);
+                assert_eq!("goodbye", version.next().data);
             })
             .await
             .unwrap();
@@ -425,7 +419,10 @@ mod test {
         let versioned = Versioned::from_initial(String::from("Hello")).0;
 
         //updates affect versioned
-        versioned.update(Box::new(|old| Some(old.clone() + ", World")));
+        versioned
+            .update(Box::new(|old| Some(old.clone() + ", World")))
+            .map_err(|_| ())
+            .expect("Should be ok");
 
         tokio::task::yield_now().await;
 
@@ -437,7 +434,10 @@ mod test {
         let versioned = Versioned::from_initial(String::from("Hello")).0;
         let clone = versioned.clone();
         //updates affect versioned
-        versioned.update(Box::new(|old| Some(old.clone() + ", World")));
+        versioned
+            .update(Box::new(|old| Some(old.clone() + ", World")))
+            .map_err(|_| ())
+            .expect("Should be ok");
 
         tokio::task::yield_now().await;
 
@@ -452,7 +452,10 @@ mod test {
         let quitter = tuple.1;
 
         //updates affect versioned
-        versioned.update(Box::new(|old| Some(old.clone() + ", World")));
+        versioned
+            .update(Box::new(|old| Some(old.clone() + ", World")))
+            .map_err(|_| ())
+            .expect("Should be ok");
         tokio::task::yield_now().await;
 
         quitter.quit();
@@ -494,11 +497,14 @@ mod test {
         let drop_counter = counter.clone();
 
         //updates affect versioned
-        versioned.update(Box::new(|old| {
-            Some(Arc::new(TestData {
-                drop_counter: drop_counter,
+        versioned
+            .update(Box::new(|_| {
+                Some(Arc::new(TestData {
+                    drop_counter: drop_counter,
+                }))
             }))
-        }));
+            .map_err(|_| ())
+            .expect("Should be ok");
 
         tokio::task::yield_now().await;
         // update Versioned to latest
