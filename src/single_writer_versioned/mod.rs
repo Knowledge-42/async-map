@@ -3,7 +3,7 @@
 //! are immtuable, means a creating a new instance - are delegated to a single task, and hence occur
 //! sequentially. Each new update is appended to a linked list of versions, and an atomic integer is used to
 //! indicate which is the latest version, so readers can retrieve the latest version when they read. This integer
-//! acts in place of a locked on the linked list element, so that no actual locks are required and reads can always
+//! acts in place of a lock on the linked list element, so that no actual locks are required and reads can always
 //! proceed without waiting.
 mod private {
     use std::cell::Cell;

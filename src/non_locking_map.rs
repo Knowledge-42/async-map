@@ -1,5 +1,5 @@
 use crate::single_writer_versioned::{DataUpdater, Versioned};
-use crate::{AsyncMap, FactoryBorrow, KeyTrait, ValueTrait};
+use crate::{AsyncKey, AsyncMap, AsyncStorable, FactoryBorrow};
 use im;
 
 use futures::{FutureExt, TryFutureExt};
@@ -7,11 +7,11 @@ use std::future::{ready, Future};
 use std::pin::Pin;
 
 #[derive(Clone)]
-pub struct NonLockingMap<K: KeyTrait, V: ValueTrait> {
+pub struct NonLockingMap<K: AsyncKey, V: AsyncStorable> {
     versioned: Versioned<im::HashMap<K, V>>,
 }
 
-impl<K: KeyTrait, V: ValueTrait> NonLockingMap<K, V> {
+impl<K: AsyncKey, V: AsyncStorable> NonLockingMap<K, V> {
     pub fn new() -> NonLockingMap<K, V> {
         NonLockingMap {
             versioned: Versioned::from_initial(im::HashMap::new()).0, // No quitting!
@@ -19,7 +19,7 @@ impl<K: KeyTrait, V: ValueTrait> NonLockingMap<K, V> {
     }
 }
 
-impl<K: KeyTrait, V: ValueTrait> AsyncMap for NonLockingMap<K, V> {
+impl<K: AsyncKey, V: AsyncStorable> AsyncMap for NonLockingMap<K, V> {
     type Key = K;
     type Value = V;
     fn get_if_present(&self, key: &K) -> Option<V> {
@@ -68,7 +68,7 @@ impl<K: KeyTrait, V: ValueTrait> AsyncMap for NonLockingMap<K, V> {
 mod test {
 
     use super::NonLockingMap as VersionedMap;
-    use crate::AsyncMap;
+    use crate::{AsyncFactory, AsyncMap};
     #[tokio::test]
     async fn get_sync() {
         let map = VersionedMap::<String, String>::new();
@@ -88,7 +88,7 @@ mod test {
 
         let future = map.get(
             &key,
-            Box::new(hello_factory) as Box<dyn Fn(&String) -> String + Send + Sync>,
+            Box::new(hello_factory) as Box<dyn AsyncFactory<String, String>>,
         );
 
         assert_eq!(None, map.get_if_present(&key));

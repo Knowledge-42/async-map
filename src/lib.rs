@@ -15,27 +15,39 @@ use std::pin::Pin;
 
 pub use versioned_map::VersionedMap;
 
-pub trait KeyTrait: Clone + Hash + Eq + Sync + Send + Unpin + std::fmt::Debug + 'static {}
-impl<T: Clone + Hash + Eq + Sync + Send + Unpin + std::fmt::Debug + 'static> KeyTrait for T {}
+/// A trait for types that can be held in a collection used in an asynchronous context,
+/// which might be shared between many tasks. A blanket implementation is provided.
+pub trait AsyncStorable: Clone + Send + Sync + std::fmt::Debug + Unpin + 'static {}
+impl<T: Clone + Send + Sync + Unpin + std::fmt::Debug + 'static> AsyncStorable for T {}
 
-pub trait ValueTrait: Clone + Send + Sync + std::fmt::Debug + Unpin + 'static {}
-impl<T: Clone + Send + Sync + Unpin + std::fmt::Debug + 'static> ValueTrait for T {}
+/// A trait for types that can be keys in an asynchronous map. A blanket implementation is provided.
+pub trait AsyncKey: AsyncStorable + Hash + Eq {}
+impl<T: AsyncStorable + Hash + Eq> AsyncKey for T {}
 
-pub trait FactoryBorrow<K: KeyTrait, V: ValueTrait>:
-    Borrow<dyn Fn(&K) -> V + Send + Sync> + Send + 'static + Unpin
+/// A trait for factory methods that can be used to create new values for a key in an asynchronous map. A blanket implementation is provided.
+pub trait AsyncFactory<K: AsyncKey, V: AsyncStorable>:
+    (Fn(&K) -> V) + Send + Sync + 'static
 {
 }
-impl<
-        K: KeyTrait,
-        V: ValueTrait,
-        T: Borrow<dyn Fn(&K) -> V + Send + Sync> + Send + 'static + Unpin,
-    > FactoryBorrow<K, V> for T
+impl<K: AsyncKey, V: AsyncStorable, F: (Fn(&K) -> V) + Send + Sync + 'static> AsyncFactory<K, V>
+    for F
+{
+}
+
+/// A trait for types from which a factory method can be borrowed. A blanket implementation is provided.
+pub trait FactoryBorrow<K: AsyncKey, V: AsyncStorable>:
+    Borrow<dyn AsyncFactory<K, V>> + Send + Unpin + 'static
+{
+}
+
+impl<K: AsyncKey, V: AsyncStorable, T: Borrow<dyn AsyncFactory<K, V>> + Send + Unpin + 'static>
+    FactoryBorrow<K, V> for T
 {
 }
 
 pub trait AsyncMap: Clone + Send {
-    type Key: KeyTrait;
-    type Value: ValueTrait;
+    type Key: AsyncKey;
+    type Value: AsyncStorable;
     fn get_if_present(&self, key: &Self::Key) -> Option<Self::Value>;
 
     fn get<'a, 'b, B: FactoryBorrow<Self::Key, Self::Value>>(

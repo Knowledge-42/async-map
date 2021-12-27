@@ -4,7 +4,7 @@ use std::hash::Hash;
 use std::pin::Pin;
 use std::sync::{Arc, RwLock};
 
-use crate::{AsyncMap, FactoryBorrow, KeyTrait, ValueTrait};
+use crate::{AsyncKey, AsyncMap, AsyncStorable, FactoryBorrow};
 
 #[derive(Clone)]
 pub struct LockingMap<K, V>
@@ -15,7 +15,7 @@ where
     map: Arc<RwLock<HashMap<K, V>>>,
 }
 
-impl<K: KeyTrait + Sync, V: ValueTrait + Sync> AsyncMap for LockingMap<K, V> {
+impl<K: AsyncKey + Sync, V: AsyncStorable + Sync> AsyncMap for LockingMap<K, V> {
     type Key = K;
     type Value = V;
 
@@ -54,8 +54,8 @@ impl<K: KeyTrait + Sync, V: ValueTrait + Sync> AsyncMap for LockingMap<K, V> {
 
 impl<K, V> LockingMap<K, V>
 where
-    K: KeyTrait,
-    V: ValueTrait,
+    K: AsyncKey,
+    V: AsyncStorable,
 {
     pub fn new() -> Self {
         LockingMap {

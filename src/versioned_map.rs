@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use std::task::{Context, Poll, Waker};
 
-use crate::{AsyncMap, FactoryBorrow, KeyTrait, ValueTrait};
+use crate::{AsyncKey, AsyncMap, AsyncStorable, FactoryBorrow};
 
 use futures::FutureExt;
 
@@ -17,7 +17,7 @@ use im::HashMap;
 use tokio::sync::mpsc::{self, UnboundedSender};
 use tokio::sync::oneshot;
 
-enum MapAction<K: KeyTrait, V: ValueTrait> {
+enum MapAction<K: AsyncKey, V: AsyncStorable> {
     GetOrCreate(
         K,
         Box<dyn FactoryBorrow<K, V>>,
@@ -26,7 +26,7 @@ enum MapAction<K: KeyTrait, V: ValueTrait> {
     ),
 }
 
-struct MapReturnFuture<K: KeyTrait, V: ValueTrait, B>
+struct MapReturnFuture<K: AsyncKey, V: AsyncStorable, B>
 where
     B: FactoryBorrow<K, V> + Unpin,
 {
@@ -36,7 +36,7 @@ where
     result_sender: Option<oneshot::Sender<(V, MapHolder<K, V>)>>,
 }
 
-impl<'a, K: KeyTrait, V: ValueTrait, B> Future for MapReturnFuture<K, V, B>
+impl<'a, K: AsyncKey, V: AsyncStorable, B> Future for MapReturnFuture<K, V, B>
 where
     B: FactoryBorrow<K, V> + Unpin,
 {
@@ -69,12 +69,12 @@ where
 }
 
 #[derive(Clone)]
-struct MapHolder<K: KeyTrait, V: ValueTrait> {
+struct MapHolder<K: AsyncKey, V: AsyncStorable> {
     version: u64,
     map: HashMap<K, V>,
 }
 
-pub struct VersionedMap<K: KeyTrait, V: ValueTrait> {
+pub struct VersionedMap<K: AsyncKey, V: AsyncStorable> {
     latest_version: Arc<AtomicU64>,
     map_holder: RefCell<MapHolder<K, V>>,
     update_sender: UnboundedSender<MapAction<K, V>>,
@@ -82,11 +82,11 @@ pub struct VersionedMap<K: KeyTrait, V: ValueTrait> {
     latest_map_holder: Arc<RwLock<MapHolder<K, V>>>,
 }
 
-struct UpdateReceiver<K: KeyTrait, V: ValueTrait> {
+struct UpdateReceiver<K: AsyncKey, V: AsyncStorable> {
     receiver: RefCell<Option<oneshot::Receiver<MapHolder<K, V>>>>,
 }
 
-impl<K: KeyTrait, V: ValueTrait> Default for UpdateReceiver<K, V> {
+impl<K: AsyncKey, V: AsyncStorable> Default for UpdateReceiver<K, V> {
     fn default() -> Self {
         UpdateReceiver {
             receiver: RefCell::new(None),
@@ -94,7 +94,7 @@ impl<K: KeyTrait, V: ValueTrait> Default for UpdateReceiver<K, V> {
     }
 }
 
-impl<K: KeyTrait, V: ValueTrait> UpdateReceiver<K, V> {
+impl<K: AsyncKey, V: AsyncStorable> UpdateReceiver<K, V> {
     pub fn updater(&self) -> MapUpdater<K, V> {
         let (sender, receiver) = oneshot::channel();
         // Note that any prior receiver will be lost. Since updates are
@@ -121,11 +121,11 @@ impl<K: KeyTrait, V: ValueTrait> UpdateReceiver<K, V> {
     }
 }
 
-struct MapUpdater<K: KeyTrait, V: ValueTrait> {
+struct MapUpdater<K: AsyncKey, V: AsyncStorable> {
     sender: oneshot::Sender<MapHolder<K, V>>,
 }
 
-impl<K: KeyTrait, V: ValueTrait> MapUpdater<K, V> {
+impl<K: AsyncKey, V: AsyncStorable> MapUpdater<K, V> {
     pub fn apply(self, new_map: MapHolder<K, V>) {
         if let Err(_) = self.sender.send(new_map) {
             // probably the map was alread dropped; ignore
@@ -133,7 +133,7 @@ impl<K: KeyTrait, V: ValueTrait> MapUpdater<K, V> {
     }
 }
 
-impl<K: KeyTrait, V: ValueTrait> AsyncMap for VersionedMap<K, V> {
+impl<K: AsyncKey, V: AsyncStorable> AsyncMap for VersionedMap<K, V> {
     type Key = K;
     type Value = V;
 
@@ -154,7 +154,7 @@ impl<K: KeyTrait, V: ValueTrait> AsyncMap for VersionedMap<K, V> {
     }
 }
 
-impl<K: KeyTrait, V: ValueTrait> Clone for VersionedMap<K, V> {
+impl<K: AsyncKey, V: AsyncStorable> Clone for VersionedMap<K, V> {
     fn clone(&self) -> Self {
         VersionedMap {
             latest_version: self.latest_version.clone(),
@@ -166,7 +166,7 @@ impl<K: KeyTrait, V: ValueTrait> Clone for VersionedMap<K, V> {
     }
 }
 
-impl<K: KeyTrait, V: ValueTrait> VersionedMap<K, V> {
+impl<K: AsyncKey, V: AsyncStorable> VersionedMap<K, V> {
     pub fn new() -> Self {
         let (update_sender, mut update_receiver) = mpsc::unbounded_channel();
 
@@ -358,7 +358,7 @@ impl<K: KeyTrait, V: ValueTrait> VersionedMap<K, V> {
 mod test {
 
     use super::VersionedMap;
-    use crate::AsyncMap;
+    use crate::{AsyncFactory, AsyncMap};
     #[tokio::test]
     async fn get_sync() {
         let map = VersionedMap::<String, String>::new();
@@ -378,7 +378,7 @@ mod test {
 
         let future = map.get(
             &key,
-            Box::new(hello_factory) as Box<dyn Fn(&String) -> String + Send + Sync>,
+            Box::new(hello_factory) as Box<dyn AsyncFactory<String, String>>,
         );
 
         assert_eq!(None, map.get_if_present(&key));

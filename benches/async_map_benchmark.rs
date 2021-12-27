@@ -1,3 +1,4 @@
+use async_map::AsyncFactory;
 use criterion::BenchmarkId;
 use criterion::Criterion;
 use criterion::{criterion_group, criterion_main};
@@ -34,7 +35,7 @@ async fn do_something<M: AsyncMap<Key = String, Value = String> + 'static>(
                 let future = map.get(
                     &step_pair.0,
                     Box::new(move |key: &String| format!("Valu: {}", key))
-                        as Box<dyn Fn(&String) -> String + Send + Sync>,
+                        as Box<dyn AsyncFactory<String, String>>,
                 );
 
                 let value = future.await;
