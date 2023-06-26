@@ -29,6 +29,7 @@ pub trait AsyncFactory<K: AsyncKey, V: AsyncStorable>:
     (Fn(&K) -> V) + Send + Sync + 'static
 {
 }
+
 impl<K: AsyncKey, V: AsyncStorable, F: (Fn(&K) -> V) + Send + Sync + 'static> AsyncFactory<K, V>
     for F
 {
@@ -59,8 +60,38 @@ pub trait AsyncMap: Clone + Send {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use crate::{AsyncFactory, AsyncKey, AsyncStorable, FactoryBorrow};
+
+    #[derive(Clone, PartialEq, Eq, Hash, Debug)]
+    pub struct TestKey(pub String);
+
+    #[derive(Clone, PartialEq, Debug)]
+    pub struct TestValue(pub String);
+
+    fn print_value<T: AsyncStorable>(value: T) {
+        println!("value: {:?}", value);
+    }
+
+    fn factory(key: &TestKey) -> TestValue {
+        TestValue(key.0.clone())
+    }
+
+    fn call_factory2<K: AsyncKey, V: AsyncStorable, F: FactoryBorrow<K, V>>(fact: F, key: &K) -> V {
+        fact.borrow()(key)
+    }
+
     #[test]
     fn it_works() {
-        assert_eq!(2 + 2, 4);
+        let key = TestKey("test".to_string());
+        let value = TestValue("test value".to_string());
+
+        let factory = Arc::new(factory);
+
+        print_value(value);
+
+        // Not testing anything, this test demonstrates compilation
+        call_factory2(factory as Arc<dyn AsyncFactory<TestKey, TestValue>>, &key);
     }
 }
