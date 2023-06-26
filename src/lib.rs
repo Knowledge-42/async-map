@@ -46,7 +46,6 @@ impl<K: AsyncKey, V: AsyncStorable, T: Borrow<dyn AsyncFactory<K, V>> + Send + U
 {
 }
 
-
 pub trait AsyncMap: Clone + Send {
     type Key: AsyncKey;
     type Value: AsyncStorable;
@@ -63,8 +62,7 @@ pub trait AsyncMap: Clone + Send {
 mod tests {
     use std::sync::Arc;
 
-    use crate::{AsyncKey, AsyncStorable, FactoryBorrow, AsyncFactory};
-
+    use crate::{AsyncFactory, AsyncKey, AsyncStorable, FactoryBorrow};
 
     #[derive(Clone, PartialEq, Eq, Hash, Debug)]
     pub struct TestKey(pub String);
@@ -72,7 +70,7 @@ mod tests {
     #[derive(Clone, PartialEq, Debug)]
     pub struct TestValue(pub String);
 
-    fn print_value<T : AsyncStorable>(value : T) {
+    fn print_value<T: AsyncStorable>(value: T) {
         println!("value: {:?}", value);
     }
 
@@ -80,14 +78,13 @@ mod tests {
         TestValue(key.0.clone())
     }
 
-    fn call_factory2<K: AsyncKey, V: AsyncStorable, F: FactoryBorrow<K,V>>(fact: F, key: &K) -> V {
+    fn call_factory2<K: AsyncKey, V: AsyncStorable, F: FactoryBorrow<K, V>>(fact: F, key: &K) -> V {
         fact.borrow()(key)
     }
 
-
     #[test]
     fn it_works() {
-        let key =  TestKey("test".to_string());
+        let key = TestKey("test".to_string());
         let value = TestValue("test value".to_string());
 
         let factory = Arc::new(factory);
@@ -96,6 +93,5 @@ mod tests {
 
         // Not testing anything, this test demonstrates compilation
         call_factory2(factory as Arc<dyn AsyncFactory<TestKey, TestValue>>, &key);
-
     }
 }
